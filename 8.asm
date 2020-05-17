@@ -26,16 +26,16 @@ oldKeyboardOffset dw ?
 oldKeyboardSegment dw ?
 
 
-newKeyboardInterrupt proc far
+newKeyboard proc far
+    cli
     pusha
     pushf
+
 ; настройка регистра ds на данные резидентной программы
     push cs
     pop ds 
     
     call dword ptr cs:oldKeyboardOffset ; вызов старого обработчика прерываний для клавиатуры
-
-    cli  ; разрешение прерываний
     
     mov ah, 01h ; проверка наличия символа в буфере клавы
     int 16h
@@ -48,7 +48,7 @@ newKeyboardInterrupt proc far
         sti 			; запретить прерывания
         mov ax, delay
         cmp counter, ax
-        jl endOfKeyboardInterrupt
+        jl endOfKeyboard
         
        push es
 
@@ -61,9 +61,10 @@ newKeyboardInterrupt proc far
 
        pop es    
 
-    endOfKeyboardInterrupt:
+    endOfKeyboard:
         mov counter, 0
         popa 
+    sti
     iret  
 
 reinstallInterrupt:
@@ -84,8 +85,8 @@ reinstallInterrupt:
 
 endp  
 
-newTimerInterrupt proc far 
-    cli
+newTimer proc far 
+    cli ; запретить прерывания
     pusha  
 ; настройка регистра ds на данные резидентной программы
     push cs
@@ -94,34 +95,36 @@ newTimerInterrupt proc far
     inc counter
     mov ax, delay  
     cmp counter, ax
-    jne endOfTimerInterrupt
+    jne endOfTimer
 
     push es
      	mov ax , 0B800h
         mov es , ax
      	xor bx , bx
         xor di , di
-    saveScreen: 
+saveScreen: 
         mov ax, es:[di]
         mov [screen+di], ax      
         add di, 2   
         cmp di, 4000                     
-    jl saveScreen
-	mov di, 0
+        jl saveScreen
+	xor di , di
 	mov cx, 2000
-    fillScreen: 
+fillScreen: 
         push cx   
         mov cx,2 
         mov si,offset symbol
         rep movsb 
         pop cx
-    loop fillScreen 
+	sub cx , 1
+        cmp cx , 0
+        jne fillScreen
     pop es
 
-endOfTimerInterrupt:  
+endOfTimer:  
+    sti ; разрешить прерывания
     popa 
-    sti
-   jmp dword ptr cs:oldTimerOffset 
+    jmp dword ptr cs:oldTimerOffset 
 
 endp
 
@@ -147,7 +150,7 @@ set_interrupt proc
     mov oldTimerSegment, es
     
     mov ax, 2508h ; установка нового обработчика времени
-    mov dx, offset newTimerInterrupt
+    mov dx, offset newTimer
     int 21h  
     
     mov ax, 3509h
@@ -156,7 +159,7 @@ set_interrupt proc
     mov oldKeyboardSegment, es
     
     mov ax, 2509h
-    mov dx, offset newKeyboardInterrupt
+    mov dx, offset newKeyboard
     int 21h
     
     mov dx, offset main ; main  - адрес первого байта за резідентным участком
