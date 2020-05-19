@@ -61,17 +61,16 @@ resid:
 	mov cx, 4000 ;запись в видеопамять сохраненного экрана
 	lea si, screen
 	rep movsb
-   cmp flag , 1
-   jne endOfKeyboard
-
+        cmp flag , 1
+        jne endOfKeyboard
         push cs
-	pop es
-	mov ah , 49h
+	pop  es
+	mov ah,49h
 	int 21h
 
     endOfKeyboard:
-        mov counter, 0
-        pop ax 
+        mov counter, 0 
+        pop ax
 	pop ds
         pop di
 	pop si
@@ -81,7 +80,6 @@ resid:
 	pop es  
         iret  
  reinstallInterrupt:
-
     mov flag , 1
     mov ds, word ptr cs:oldTimerSegment
     mov dx, word ptr cs:oldTimerOffset
@@ -96,15 +94,7 @@ resid:
     push cs
     pop ds
 
-    jmp showScreen
-	;pop di
-	;pop si
-	;pop dx
-	;pop cx
-	;pop bx
-	;pop es
-	; передаем управление старому обработчику
-	;jmp dword ptr cs:oldKeyboardOffset   
+    jmp showScreen   
 endp  
 
 newTimer proc far 
@@ -116,6 +106,7 @@ newTimer proc far
    push si
    push di
    push ds
+   push ax
 
     push cs
     pop ds 
@@ -158,7 +149,8 @@ fillScreen:
         cmp cx , 0
         jne fillScreen
 
-endOfTimer:  
+endOfTimer:
+        pop ax  
         pop ds
         pop di
 	pop si
@@ -221,7 +213,7 @@ set_interrupt proc near
     mov ax, 2509h
     mov dx, offset newKeyboard
     int 21h
-    
+
     mov dx, offset main ; main  - адрес первого байта за резідентным участком
     int 27h 
 
@@ -294,12 +286,12 @@ StoreRes:
 
 error:
     printString wrongArgs
-     mov ax, 4C00h
+   mov ax, 4C00h
       int 21h
 
 checkOverflow:
    printString overflowString
-    mov ax, 4C00h
+   mov ax, 4C00h
       int 21h
 endp makeNum  
 
