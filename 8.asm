@@ -1,116 +1,150 @@
 .model tiny  
-.code
-.386 
+.286
+Code SEGMENT
+Assume CS: Code, DS: Code , SS:Code , ES :Code
 org 100h  
+resprog :jmp main
+     
+key dw 			5555h
 
-start: 
-    jmp main
 
-cmdString		db 80 dup('$') 
-cmd_len			db 0
 num			dw 0
 counter			dw 0 
 delay 			dw 0  
 symbol			db 003h, 00000100b
    
 screen			dw 2000 dup('$')
-emptyLine 		db 13, 10, 'No parametrs in cmd$'
-tooMany                 db 0Ah, 0Dh, 'Too many arguments.You should input one string$'   
-wrongArgs         	db 0Ah, 0Dh, 'Bad parametrs in comand line$'
-overflowString          db 0Ah, 0Dh, 'Too big a number$' 
 
-oldTimerOffset  dw ?
-oldTimerSegment dw ? 
-        
+oldTimerOffset  dw ?  
+oldTimerSegment dw ?    
 oldKeyboardOffset dw ?
 oldKeyboardSegment dw ?
 
+flag 		db 0
 
 newKeyboard proc far
-    cli
-    pusha
-    pushf
-
-; настройка регистра ds на данные резидентной программы
+       
+   push ax
+   push es
+   push bx
+   push cx
+   push dx
+   push si
+   push di
+  ; push ds
+    
     push cs
-    pop ds 
-    
-    call dword ptr cs:oldKeyboardOffset ; вызов старого обработчика прерываний для клавиатуры
-    
-    mov ah, 01h ; проверка наличия символа в буфере клавы
+    pop ds
+    pushf
+    call dword ptr cs:oldKeyboardOffset; вызов старого обработчика прерываний для клавиатуры
+
+    mov ah, 01h
     int 16h
-    jz showScreen
+    jz showScreen ;проверка наличия чего-либо в буфере 
 
     cmp ah, 01h ; проверяем не нажата ли esc
-    je reinstallInterrupt ; если нажата - тогда устанавливаем старые обработчики
-    
+    je reinstallInterrupt;  
+
     showScreen:
-        sti 			; запретить прерывания
+ 
         mov ax, delay
         cmp counter, ax
         jl endOfKeyboard
-        
-       push es
 
         mov ax , 0B800h ; видеопамять
         mov es , ax 
-    	mov di, 0
-    	mov cx, 4000   	;запись в видеопамять сохраненного экрана
-    	lea si, screen  
-    	rep movsb 
+	mov di, 0000h
+        mov ax , 0500h
+        int 10h	
+        mov di, 0
+	mov cx, 4000 ;запись в видеопамять сохраненного экрана
+	lea si, screen
+	rep movsb
+        cmp flag , 1
+        jne endOfKeyboard
+    
 
-       pop es    
+
+	push cs
+	pop es
+	mov ah , 49h
+	int 21h
 
     endOfKeyboard:
-        mov counter, 0
-        popa 
-    sti
-    iret  
+        mov counter, 0 
+	;pop ds
+        pop di
+	pop si
+	pop dx
+	pop cx
+	pop bx
+	pop es 
+        pop ax 
+        iret 
+ 
+ reinstallInterrupt:
 
-reinstallInterrupt:
-
-    mov ds,  cs:oldTimerSegment
-    mov dx,  cs:oldTimerOffset
+    mov flag , 1
+    mov ds, word ptr cs:oldTimerSegment
+    mov dx, word ptr cs:oldTimerOffset
     mov ax , 2508h
     int 21h 
 
-    mov ds, cs:oldKeyboardSegment
-    mov dx, cs:oldKeyboardOffset
+    mov ds, word ptr cs:oldKeyboardSegment
+    mov dx, word ptr cs:oldKeyboardOffset
     mov ax , 2509h
-    int 21h 
+    int 21h
 
     push cs
     pop ds
-    jmp ShowScreen
 
+    jmp showScreen 
+         
 endp  
 
 newTimer proc far 
-    cli ; запретить прерывания
-    pusha  
-; настройка регистра ds на данные резидентной программы
+   push ax
+   push es
+   push bx
+   push cx
+   push dx
+   push si
+   push di
+   ;push ds
+
     push cs
-    pop ds 
+    pop ds
+  
+; настройка регистра ds на данные резидентной программы
 
     inc counter
     mov ax, delay  
     cmp counter, ax
-    jne endOfTimer
+    je cont
+    jmp endOfTimer
 
-    push es
+cont:
      	mov ax , 0B800h
         mov es , ax
      	xor bx , bx
         xor di , di
+
 saveScreen: 
-        mov ax, es:[di]
-        mov [screen+di], ax      
-        add di, 2   
-        cmp di, 4000                     
-        jl saveScreen
-	xor di , di
-	mov cx, 2000
+	mov ax, es:[di]
+	mov [screen+di], ax
+	add di, 2
+	cmp di, 4000
+jl saveScreen
+ 
+         mov ax , 0B900h
+         mov es , ax
+   	 mov ax, 0501h   
+    	 int 10h
+	 xor di , di
+	 mov cx, 2000
+
 fillScreen: 
+
         push cx   
         mov cx,2 
         mov si,offset symbol
@@ -119,12 +153,17 @@ fillScreen:
 	sub cx , 1
         cmp cx , 0
         jne fillScreen
-    pop es
 
 endOfTimer:  
-    sti ; разрешить прерывания
-    popa 
-    jmp dword ptr cs:oldTimerOffset 
+        ;pop ds
+        pop di
+	pop si
+	pop dx
+	pop cx
+	pop bx
+	pop es  
+        pop ax  
+        jmp dword ptr cs:oldTimerOffset
 
 endp
 
@@ -142,12 +181,31 @@ printString macro string
     int 21h
 endm 
 
-set_interrupt proc
+exit proc  
+    mov ax, 4C00h
+    int 21h 
+    ret
+endp
 
+set_interrupt proc near
+; pusha
+ push es 
+ push ds
+
+ push cs
+ pop ds
+ 
+;производим проверку (сравнивая с ключом) на ;повторную установку  программы.
     mov ax, 3508h 
     int 21h
-    mov oldTimerOffset, bx ; запоминаем смещение и сегментный адрес старого обработчика
-    mov oldTimerSegment, es
+   
+    cmp word ptr es:[103h],5555h
+    jz inst
+
+    mov word ptr oldTimerOffset, bx ; запоминаем смещение и сегментный адрес старого обработчика
+    mov word ptr oldTimerSegment, es
+
+   
     
     mov ax, 2508h ; установка нового обработчика времени
     mov dx, offset newTimer
@@ -155,25 +213,38 @@ set_interrupt proc
     
     mov ax, 3509h
     int 21h
-    mov oldKeyboardOffset, bx
-    mov oldKeyboardSegment, es
+    cmp word ptr es:[103h],5555h
+    jz inst
+    mov word ptr oldKeyboardOffset, bx
+    mov word ptr oldKeyboardSegment, es
+
     
     mov ax, 2509h
     mov dx, offset newKeyboard
     int 21h
     
     mov dx, offset main ; main  - адрес первого байта за резідентным участком
-    int 27h  
-    ret
-endp 
+    int 27h 
 
-exit proc  
-    mov ax, 4C00h
-    int 21h 
+    pop ds
+    pop es
     ret
+
+inst: 
+
+    pop ds
+    pop es
+    mov ax , 0B800h
+    mov es , ax
+    mov ax, 0500h   
+    int 10h
+    printString bye
+    mov ax,4C00h
+    int 21h 
+    
 endp
 
-makeNum  proc 
+makeNum  proc near 
   push di
   push dx
 
@@ -224,17 +295,20 @@ StoreRes:
 
 error:
     printString wrongArgs
-    call exit
+    mov ax, 4C00h
+      int 21h 
+    
 
 checkOverflow:
    printString overflowString
-   jmp exit
+   mov ax, 4C00h
+      int 21h 
+   
 
 endp makeNum  
 
-getCmd proc
-
-         mov ax, @data           
+getCmd proc near
+         mov ax, @code         
          mov es , ax
 
 		    
@@ -256,13 +330,13 @@ getCmd proc
            ret
 
 emptyCommandLine:
-     mov ds, ax	
      printString emptyLine 
-     call exit
-
+     mov ax, 4C00h
+     int 21h
+    
 getCmd endp
  
-checkCmd proc 
+checkCmd proc near 
     lea si, cmdString 
     cmp byte ptr [si], 30h
     je checkFailed
@@ -279,14 +353,27 @@ checkCmd proc
 
   TooManyArgs:
     printString TooMany
-    call exit
+      mov ax, 4C00h
+      int 21h
   checkFailed:
-    printString wrongArgs
-    call exit  
+      printString wrongArgs
+      mov ax, 4C00h
+      int 21h 
   checkPassed:
     inc si
     jmp startOfCheck  
-    endOfCheck:  
+   endOfCheck:  
     ret
 endp 
+
+cmdString		db 80 dup('$') 
+cmd_len			db 0
+emptyLine 		db 0Ah, 0Dh, 'No arguments in command line$'
+tooMany                 db 0Ah, 0Dh, 'Too many arguments$'   
+wrongArgs         	db 0Ah, 0Dh, 'Bad arguments in comand line$'
+overflowString          db 0Ah, 0Dh, 'Too big a number$' 
+bye			db 0Ah, 0Dh, 'Already loaded$'
+
+Code ENDS
+END resprog 
 end start
